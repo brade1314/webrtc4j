@@ -1,0 +1,51 @@
+<!DOCTYPE HTML>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>WebRTC</title>
+    <meta charset="utf-8">
+    <meta name="description" content="WebRTC reference app">
+    <meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1, maximum-scale=1">
+    <meta itemprop="description" content="Video chat using the reference WebRTC application">
+    <meta itemprop="name" content="WebRTC">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta id="theme-color" name="theme-color" content="#1e1e1e">
+    <link rel="icon" sizes="192x192" href="../images/webrtc-icon-192x192.png">
+    <link rel="stylesheet" href="../css/main.css">
+</head>
+<body>
+<div id="videos">
+    <video id="mini-video" autoplay playsinline muted></video>
+    <video id="remote-video" autoplay playsinline></video>
+    <video id="local-video" autoplay playsinline muted></video>
+</div>
+
+<div id="room-selection" class="hidden">
+    <h1>WebRTC For Java</h1>
+    <p id="instructions">请输入房间号.</p>
+    <div>
+        <div id="room-id-input-div">
+            <input type="text" id="room-id-input" autofocus/>
+        </div>
+        <div id="room-id-input-buttons">
+            <button id="join-button">创建/加入房间</button>
+            <button id="random-button">生成房间号</button>
+        </div>
+    </div>
+</div>
+<footer>
+    <div id="sharing-div">
+        <div id="room-link">等待其它用户加入: <a id="room-link-href" href="" target="_blank"></a>
+        </div>
+    </div>
+</footer>
+
+
+<script type="text/javascript" src="../js/require.js" data-main="../js/main.js?ver=20180614"></script>
+<script type="text/javascript">
+    require(['appcontroller'], function (app) {
+        app.init();
+    });
+</script>
+</body>
+</html>

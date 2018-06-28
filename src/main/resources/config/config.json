@@ -1,0 +1,39 @@
+{
+  "http.port": 8080,
+  "webrtc.config": {
+    "wssUrl": "wss://www.youyeetech.com",
+    "initiator": false,
+    "roomId": null,
+    "roomServer": "https://www.youyeetech.com",
+    "joinRoomUrl": null,
+    "iceServerUrl": "https://www.youyeetech.com/ice/turn?username=brade1314",
+    "constraints": {
+      "video": { "mandatory": {}, "optional": [ { "minWidth": "1280" }, { "minHeight": "1080" } ] },
+      "audio": true
+    },
+    "certParams": { "name": "ECDSA", "namedCurve": "P-256" },
+    "peerConnectionConfig": {
+      "iceServers": [],
+      "bundlePolicy": "max-bundle",
+      "rtcpMuxPolicy": "require",
+      "certificates": null
+    },
+    "peerConnectionConstraints": { "optional": [] },
+    "mediaCodec": {
+      "audioSendBitrate": "16000",
+      "audioSendCodec": "ISAC/16000",
+      "audioRecvBitrate": "48000",
+      "audioRecvCodec": "opus/48000",
+      "opusMaxPbr": "8000",
+      "opusFec": false,
+      "opusDtx": true,
+      "opusStereo": true,
+      "videoSendBitrate": "1000",
+      "videoSendInitialBitrate": "",
+      "videoSendCodec": "VP9",
+      "videoRecvBitrate": "8000",
+      "videoRecvCodec": "VP9",
+      "videoFec": false
+    }
+  }
+}
