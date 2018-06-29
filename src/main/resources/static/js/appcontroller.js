@@ -48,9 +48,10 @@ define(function (require, exports, module) {
         }
         this.roomId = this.roomIdInput.value;
         this.roomSelection.classList.remove('hidden');
+        var _this = this;
         this.initWebRTCParams().then(function () {
-            this.openChannel();
-            this.getIceServer();
+        	_this.openChannel();
+        	_this.getIceServer();
         }).catch(function (error) {
             util.log.error("init websocket or get ice server error ...", error.message);
         });
@@ -59,8 +60,9 @@ define(function (require, exports, module) {
     }
 
     AppController.prototype.initWebRTCParams = function () {
+    	var _this = this;
         return util.ajax('POST', "/config", false).then(function (result) {
-            this.params_ = JSON.parse(result);
+        	_this.params_ = JSON.parse(result);
             util.log.info("init params success ...");
         }).catch(function (error) {
             util.log.error("init params error ...", error.message);
@@ -151,13 +153,14 @@ define(function (require, exports, module) {
     AppController.prototype.maybeStart = function () {
         if (!this.started && this.localStream && this.channelReady) {
             this.setNotice(this.params_.joinRoomUrl);
+            var _this = this;
             this.createPeerConnection().then(function () {
-                if (this.localStream) {
-                    this.pc.addStream(localStream);
+                if (_this.localStream) {
+                	_this.pc.addStream(localStream);
                 }
-                this.started = true;
-                if (this.initiator) {
-                    this.doCall();
+                _this.started = true;
+                if (_this.initiator) {
+                	_this.doCall();
                 }
             }).catch(function (error) {
                 util.log.error('createOffer error :', error.message);
@@ -207,10 +210,11 @@ define(function (require, exports, module) {
     }
 
     AppController.prototype.getIceServer = function () {
-        return util.ajax('POST', this.params_.iceServerUrl, true).then(function (result) {
+    	var _this = this;
+        return util.ajax('POST', _this.params_.iceServerUrl, true).then(function (result) {
             var response = JSON.parse(result);
             util.log.info('ICE server request success :', response);
-            var servers = this.params_.peerConnectionConfig;
+            var servers = _this.params_.peerConnectionConfig;
             servers.iceServers = servers.iceServers.concat(response.iceServers);
         }).catch(function (error) {
             util.log.error('ICE server request error: ', error.message);
