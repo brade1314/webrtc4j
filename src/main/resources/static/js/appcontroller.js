@@ -72,18 +72,18 @@ define(function (require, exports, module) {
     AppController.prototype.bindListener = function () {
         util.setUpFullScreen();
 
-        this.joinButton.addEventListener('click', this.joinRoom, false);
+        this.joinButton.addEventListener('click', this.joinRoom.bind(this), false);
         var _this = this;
         this.randomButton.addEventListener('click', function () {
             _this.roomIdInput.value = util.randomString(9);
-            _this.roomId = this.roomIdInput.value;
+            _this.roomId = _this.roomIdInput.value;
         }, false);
         //双击全屏
-        document.body.addEventListener('dblclick', this.fullScreen, false);
+        document.body.addEventListener('dblclick', this.fullScreen.bind(this), false);
         //按键事件
-        document.addEventListener('keyup', this.onRoomIdKeyPress, false);
+        document.addEventListener('keyup', this.onRoomIdKeyPress.bind(this), false);
         // 关闭窗口退出
-        window.onbeforeunload = this.leaveRoom;
+        window.onbeforeunload = this.leaveRoom.bind(this);
 
     }
 
@@ -114,7 +114,8 @@ define(function (require, exports, module) {
 
     // 获取用户的媒体
     AppController.prototype.getUserMedia = function () {
-        var constraints = this.params_.constraints;
+    	var _this = this;
+        var constraints = _this.params_.constraints;
         util.log.info("the get user media comstraints : ", constraints);
         navigator.mediaDevices.getUserMedia(constraints).catch(function (error) {
             return navigator.mediaDevices.enumerateDevices().then(function (devices) {
@@ -132,7 +133,7 @@ define(function (require, exports, module) {
                 return navigator.mediaDevices.getUserMedia(_constraints);
             });
         }).then(function (stream) {
-            this.onUserMediaSuccess(stream);
+        	_this.onUserMediaSuccess(stream);
             return navigator.mediaDevices.enumerateDevices();
         });
     }
@@ -152,11 +153,11 @@ define(function (require, exports, module) {
     // 开始连接
     AppController.prototype.maybeStart = function () {
         if (!this.started && this.localStream && this.channelReady) {
-            this.setNotice(this.params_.joinRoomUrl);
+            this.setNotice("当前房间号是："+this.roomId);
             var _this = this;
             this.createPeerConnection().then(function () {
                 if (_this.localStream) {
-                	_this.pc.addStream(localStream);
+                	_this.pc.addStream(_this.localStream);
                 }
                 _this.started = true;
                 if (_this.initiator) {
@@ -173,7 +174,7 @@ define(function (require, exports, module) {
     AppController.prototype.doCall = function () {
         this.setNotice("连接中...");
         util.log.info("create offer ...");
-        this.pc.createOffer(this.createOfferAndAnswerSuccess, this.createOfferAndAnswerFailure);
+        this.pc.createOffer(this.createOfferAndAnswerSuccess.bind(this), this.createOfferAndAnswerFailure.bind(this));
     }
 
     // 发送信息
@@ -194,10 +195,10 @@ define(function (require, exports, module) {
         util.log.info("open websocket");
 
         this.socket = new WebSocket(this.params_.wssUrl);
-        this.socket.onopen = this.onChannelOpened;
-        this.socket.onmessage = this.onChannelMessage;
-        this.socket.onclose = this.onChannelClosed;
-        this.socket.onerror = this.onChannelError;
+        this.socket.onopen = this.onChannelOpened.bind(this);
+        this.socket.onmessage = this.onChannelMessage.bind(this);
+        this.socket.onclose = this.onChannelClosed.bind(this);
+        this.socket.onerror = this.onChannelError.bind(this);
     }
 
     // 设置状态
@@ -221,36 +222,36 @@ define(function (require, exports, module) {
         });
     }
 
-    AppController.prototype.createPcClient = function () {
-        this.pc = new PeerConnection(this.params_.peerConnectionConfig, this.params_.peerConnectionConstraints);
-        this.pc.onicecandidate = this.onIceCandidate;
-        this.pc.onconnecting = this.onSessionConnecting;
-        this.pc.onopen = this.onSessionOpened;
-        this.pc.onaddstream = this.onRemoteStreamAdded;
-        this.pc.onremovestream = this.onRemoteStreamRemoved;
+    AppController.prototype.createPcClient_ = function () {
+        this.pc = new RTCPeerConnection(this.params_.peerConnectionConfig, this.params_.peerConnectionConstraints);
+        this.pc.onicecandidate = this.onIceCandidate.bind(this);
+        this.pc.onconnecting = this.onSessionConnecting.bind(this);
+        this.pc.onopen = this.onSessionOpened.bind(this);
+        this.pc.onaddstream = this.onRemoteStreamAdded.bind(this);
+        this.pc.onremovestream = this.onRemoteStreamRemoved.bind(this);
 
     }
 
     // 打开连接
     AppController.prototype.createPeerConnection = function () {
+    	var _this = this;
         return new Promise(function (resolve, reject) {
-            if (this.pc) {
+            if (_this.pc) {
                 resolve();
                 return;
             }
-
             if (typeof RTCPeerConnection.generateCertificate === 'function') {
-                RTCPeerConnection.generateCertificate(this.params_.certParams).then(function (cert) {
+                RTCPeerConnection.generateCertificate(_this.params_.certParams).then(function (cert) {
                     util.log.info('ECDSA certificate generated successfully. ', cert);
-                    this.params_.peerConnectionConfig.certificates = [cert];
-                    this.createPcClient();
+                    _this.params_.peerConnectionConfig.certificates = [cert];
+                    _this.createPcClient_();
                     resolve();
                 }).catch(function (error) {
+                	util.log.error('ECDSA certificate generation failed.', error.message);
                     reject(error);
-                    util.log.error('ECDSA certificate generation failed.', error.message);
                 });
             } else {
-                this.createPcClient();
+            	_this.createPcClient_();
                 resolve();
             }
         });
@@ -267,7 +268,7 @@ define(function (require, exports, module) {
     // 响应
     AppController.prototype.doAnswer = function () {
         this.setNotice("连接中...");
-        this.pc.createAnswer(this.createOfferAndAnswerSuccess, this.createOfferAndAnswerFailure);
+        this.pc.createAnswer(this.createOfferAndAnswerSuccess.bind(this), this.createOfferAndAnswerFailure.bind(this));
     }
 
 
@@ -295,7 +296,7 @@ define(function (require, exports, module) {
             this.roomId = data.roomId;
             this.clientId = data.clientId;
             this.initiator = data.initiator;
-            this.params_.joinRoomUrl = data.joinRoomUrl;
+           // this.params_.joinRoomUrl = data.joinRoomUrl;
         }
         // if (initiator && data.message) {
         if (data.message) {
@@ -403,7 +404,7 @@ define(function (require, exports, module) {
             util.log.info('Remote video started; currentTime:  ', this.remoteVideo.currentTime);
             this.transitionToActive();
         } else {
-            this.remoteVideo.oncanplay = this.waitForRemoteVideo;
+            this.remoteVideo.oncanplay = this.waitForRemoteVideo.bind(this);
         }
         //2
         // if (this.remoteVideo.currentTime > 0) { // 判断远程视频长度
