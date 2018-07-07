@@ -4,90 +4,98 @@ define(function (require, exports, module) {
     var adapter = require('adapter');
     var util = require('util');
 
-    var AppController = function () {
+    var pc;
+    var main; // 视频的DIV
+    var errorNotice; // 错误提示DIV
+    var socket; // websocket
+    var localVideo; // 本地视频
+    var miniVideo; // 本地小窗口
+    var remoteVideo; // 远程视频
+    var localStream; // 本地视频流
+    var remoteStream; // 远程视频流
+    var initiator = false; // 是否已经有人在等待
+    var roomSelection;
+    var roomIdInput;
+    var randomButton;
+    var joinButton;
+    var videos;
+    var roomLinkHref;
+    var sharing;
 
-        this.main = document.getElementById("main"); // 视频的DIV
-        this.errorNoticeDiv = document.getElementById("errorNotice"); //错误提示DIV
-        this.localVideo = document.getElementById("local-video"); //本地视频
-        this.miniVideo = document.getElementById("mini-video"); // 本地小窗口
-        this.remoteVideo = document.getElementById("remote-video"); // 远程视频
-        this.roomSelection = document.getElementById("room-selection");
-        this.roomIdInput = document.getElementById("room-id-input");
-        this.randomButton = document.getElementById("random-button");
-        this.joinButton = document.getElementById("join-button");
-        this.videos = document.getElementById("videos");
-        this.roomLinkHref = document.getElementById("room-link-href");
-        this.sharing = document.getElementById("sharing-div");
+    var started = false; // 是否开始
+    var channelReady = false; // 是否打开websocket通道
 
-        this.initiator = false; // 是否已经有人在等待
-        this.started = false; // 是否开始
-        this.channelReady = false; // 是否打开websocket通道
-        this.startTime = window.performance.now();
-        this.endTime = null;
-        this.pc = null;
-        this.socket = null; // websocket
-        this.localStream = null; // 本地视频流
-        this.remoteStream = null; // 远程视频流
+    var startTime;
+    var endTime;
 
-        this.roomId = null;
-        this.clientId = null;
-        this.params_ = null;
-    };
+    var PeerConnection = window.RTCPeerConnection;
 
+    var roomId = null;
+    var clientId = null;
+    var params_ = null;
 
     // 初始化
-    AppController.prototype.initialize = function () {
+    function initialize() {
         util.log.info("---init---");
+        startTime = window.performance.now();
+        main = document.getElementById("main");
+        errorNotice = document.getElementById("errorNotice");
+        localVideo = document.getElementById("local-video");
+        miniVideo = document.getElementById("mini-video");
+        remoteVideo = document.getElementById("remote-video");
+        roomSelection = document.getElementById("room-selection");
+        roomIdInput = document.getElementById("room-id-input");
+        randomButton = document.getElementById("random-button");
+        joinButton = document.getElementById("join-button");
+        videos = document.getElementById("videos");
+        roomLinkHref = document.getElementById("room-link-href");
+        sharing = document.getElementById("sharing-div");
 
         var r = util.getUrlQueryParam('r');
         if (r && util.matchRandomRoomPattern(r)) {
-            this.roomIdInput.value = r;
-            this.randomButton.classList.add('hidden');
+            roomIdInput.value = r;
+            randomButton.classList.add('hidden');
         } else {
-            this.roomIdInput.value = util.randomString(9);
+            roomIdInput.value = util.randomString(9);
         }
-        this.roomId = this.roomIdInput.value;
-        this.roomSelection.classList.remove('hidden');
-        var _this = this;
-        this.initWebRTCParams().then(function () {
-        	_this.openChannel();
-        	_this.getIceServer();
+        roomId = roomIdInput.value;
+        roomSelection.classList.remove('hidden');
+        initWebRTCParams().then(function () {
+            openChannel();
+            getIceServer();
         }).catch(function (error) {
             util.log.error("init websocket or get ice server error ...", error.message);
         });
-        this.bindListener();
-        this.noticeMsg();
+        bindListener();
+        noticeMsg();
     }
 
-    AppController.prototype.initWebRTCParams = function () {
-    	var _this = this;
+    function initWebRTCParams() {
         return util.ajax('POST', "/config", false).then(function (result) {
-        	_this.params_ = JSON.parse(result);
+            params_ = JSON.parse(result);
             util.log.info("init params success ...");
         }).catch(function (error) {
             util.log.error("init params error ...", error.message);
         });
     }
 
-    AppController.prototype.bindListener = function () {
+    function bindListener() {
         util.setUpFullScreen();
 
-        this.joinButton.addEventListener('click', this.joinRoom.bind(this), false);
-        var _this = this;
-        this.randomButton.addEventListener('click', function () {
-            _this.roomIdInput.value = util.randomString(9);
-            _this.roomId = _this.roomIdInput.value;
+        joinButton.addEventListener('click', joinRoom, false);
+
+        randomButton.addEventListener('click', function () {
+            roomIdInput.value = util.randomString(9);
+            roomId = roomIdInput.value;
         }, false);
-        //双击全屏
-        document.body.addEventListener('dblclick', this.fullScreen.bind(this), false);
-        //按键事件
-        document.addEventListener('keyup', this.onRoomIdKeyPress.bind(this), false);
-        // 关闭窗口退出
-        window.onbeforeunload = this.leaveRoom.bind(this);
+
+        document.body.addEventListener('dblclick', fullScreen, false);
+
+        document.addEventListener('keyup', onRoomIdKeyPress, false);
 
     }
 
-    AppController.prototype.fullScreen = function () {
+    function fullScreen() {
         if (util.isFullScreen()) {
             util.log.info('Exiting fullscreen.');
             document.cancelFullScreen();
@@ -97,25 +105,24 @@ define(function (require, exports, module) {
         }
     }
 
-    AppController.prototype.onRoomIdKeyPress = function (event) {
+   function onRoomIdKeyPress(event) {
         if (event.which !== 13 || $('#join-button').disabled) {
             return;
         }
-        this.joinRoom();
+       joinRoom();
     };
 
     // 创建/加入房间
-    AppController.prototype.joinRoom = function () {
-        this.roomId = this.roomIdInput.value;
-        this.socket.send(JSON.stringify({"action": "create", "roomId": this.roomId}));
-        this.roomSelection.classList.add('hidden');
-        this.getUserMedia();
+    function joinRoom() {
+        roomId = roomIdInput.value;
+        socket.send(JSON.stringify({"action": "create", "roomId": roomId}));
+        roomSelection.classList.add('hidden');
+        getUserMedia();
     }
 
     // 获取用户的媒体
-    AppController.prototype.getUserMedia = function () {
-    	var _this = this;
-        var constraints = _this.params_.constraints;
+    function getUserMedia() {
+        var constraints = params_.constraints;
         util.log.info("the get user media comstraints : ", constraints);
         navigator.mediaDevices.getUserMedia(constraints).catch(function (error) {
             return navigator.mediaDevices.enumerateDevices().then(function (devices) {
@@ -133,125 +140,118 @@ define(function (require, exports, module) {
                 return navigator.mediaDevices.getUserMedia(_constraints);
             });
         }).then(function (stream) {
-        	_this.onUserMediaSuccess(stream);
+            onUserMediaSuccess(stream);
             return navigator.mediaDevices.enumerateDevices();
         });
     }
 
     // 获取用户媒体成功
-    AppController.prototype.onUserMediaSuccess = function (stream) {
+    function onUserMediaSuccess(stream) {
         util.log.info('attach local stream ... ', stream);
-        this.videos.classList.add('active');
+        videos.classList.add('active');
 
-        this.localVideo.srcObject = stream;
-        this.localStream = stream;
-        this.localVideo.classList.add('active');
+        localVideo.srcObject = stream;
+        localStream = stream;
+        localVideo.classList.add('active');
 
-        this.maybeStart();
+        maybeStart();
     }
 
     // 开始连接
-    AppController.prototype.maybeStart = function () {
-        if (!this.started && this.localStream && this.channelReady) {
-            this.setNotice("当前房间号是："+this.roomId);
-            var _this = this;
-            this.createPeerConnection().then(function () {
-                if (_this.localStream) {
-                	_this.pc.addStream(_this.localStream);
+    function maybeStart() {
+        if (!started && localStream && channelReady) {
+            setNotice(params_.joinRoomUrl);
+            createPeerConnection().then(function () {
+                if (localStream) {
+                    pc.addStream(localStream);
                 }
-                _this.started = true;
-                if (_this.initiator) {
-                	_this.doCall();
+                started = true;
+                if (initiator) {
+                    doCall();
                 }
             }).catch(function (error) {
-                util.log.error('createOffer error :', error.message);
+                util.log.error('createOffer error :',error.message);
             });
 
         }
     }
 
     // 开始通话
-    AppController.prototype.doCall = function () {
-        this.setNotice("连接中...");
+    function doCall() {
+        setNotice("连接中...");
         util.log.info("create offer ...");
-        this.pc.createOffer(this.createOfferAndAnswerSuccess.bind(this), this.createOfferAndAnswerFailure.bind(this));
+        pc.createOffer(createOfferAndAnswerSuccess, createOfferAndAnswerFailure);
     }
 
     // 发送信息
-    AppController.prototype.sendMessage = function (message) {
+    function sendMessage(message) {
         var msgJson = JSON.stringify(message);
-        this.socket.send(JSON.stringify({
-            "action": "message",
-            "roomId": this.roomId,
-            "clientId": this.clientId,
-            "message": msgJson
-        }));
+        socket.send(JSON.stringify({"action": "message", "roomId": roomId, "clientId": clientId, "message": msgJson}));
 
         util.log.info("send message start : ", msgJson);
     }
 
     // 打开websocket
-    AppController.prototype.openChannel = function () {
+    function openChannel() {
         util.log.info("open websocket");
 
-        this.socket = new WebSocket(this.params_.wssUrl);
-        this.socket.onopen = this.onChannelOpened.bind(this);
-        this.socket.onmessage = this.onChannelMessage.bind(this);
-        this.socket.onclose = this.onChannelClosed.bind(this);
-        this.socket.onerror = this.onChannelError.bind(this);
+        socket = new WebSocket(params_.wssUrl);
+        socket.onopen = onChannelOpened;
+        socket.onmessage = onChannelMessage;
+        socket.onclose = onChannelClosed;
+        socket.onerror = onChannelError;
     }
 
     // 设置状态
-    AppController.prototype.noticeMsg = function () {
-        if (!this.initiator) {
-            this.setNotice("请创建房间 ...");
+    function noticeMsg() {
+        if (!initiator) {
+            setNotice("请创建房间 ...");
         } else {
-            this.setNotice("初始化 ...");
+            setNotice("初始化 ...");
         }
     }
 
-    AppController.prototype.getIceServer = function () {
-    	var _this = this;
-        return util.ajax('POST', _this.params_.iceServerUrl, true).then(function (result) {
+    function getIceServer() {
+        return util.ajax('POST', params_.iceServerUrl, true).then(function (result) {
             var response = JSON.parse(result);
             util.log.info('ICE server request success :', response);
-            var servers = _this.params_.peerConnectionConfig;
+            var servers = params_.peerConnectionConfig;
             servers.iceServers = servers.iceServers.concat(response.iceServers);
         }).catch(function (error) {
             util.log.error('ICE server request error: ', error.message);
         });
     }
 
-    AppController.prototype.createPcClient_ = function () {
-        this.pc = new RTCPeerConnection(this.params_.peerConnectionConfig, this.params_.peerConnectionConstraints);
-        this.pc.onicecandidate = this.onIceCandidate.bind(this);
-        this.pc.onconnecting = this.onSessionConnecting.bind(this);
-        this.pc.onopen = this.onSessionOpened.bind(this);
-        this.pc.onaddstream = this.onRemoteStreamAdded.bind(this);
-        this.pc.onremovestream = this.onRemoteStreamRemoved.bind(this);
+    function createPcClient() {
+        pc = new PeerConnection(params_.peerConnectionConfig, params_.peerConnectionConstraints);
+        pc.onicecandidate = onIceCandidate;
+        pc.onconnecting = onSessionConnecting;
+        pc.onopen = onSessionOpened;
+        pc.onaddstream = onRemoteStreamAdded;
+        pc.onremovestream = onRemoteStreamRemoved;
 
     }
 
     // 打开连接
-    AppController.prototype.createPeerConnection = function () {
-    	var _this = this;
-        return new Promise(function (resolve, reject) {
-            if (_this.pc) {
+    function createPeerConnection() {
+        return new Promise(function(resolve, reject) {
+            if (pc) {
                 resolve();
                 return;
             }
+
             if (typeof RTCPeerConnection.generateCertificate === 'function') {
-                RTCPeerConnection.generateCertificate(_this.params_.certParams).then(function (cert) {
+                RTCPeerConnection.generateCertificate(params_.certParams).then(function (cert) {
                     util.log.info('ECDSA certificate generated successfully. ', cert);
-                    _this.params_.peerConnectionConfig.certificates = [cert];
-                    _this.createPcClient_();
+                    params_.peerConnectionConfig.certificates = [cert];
+                    createPcClient();
                     resolve();
                 }).catch(function (error) {
-                	util.log.error('ECDSA certificate generation failed.', error.message);
                     reject(error);
+                    util.log.error('ECDSA certificate generation failed.', error.message);
                 });
             } else {
-            	_this.createPcClient_();
+                createPcClient();
                 resolve();
             }
         });
@@ -259,200 +259,204 @@ define(function (require, exports, module) {
     }
 
     // 设置状态
-    AppController.prototype.setNotice = function (msg) {
-        this.sharing.classList.add('active');
-        this.roomLinkHref.text = msg;
-        this.roomLinkHref.href = msg;
+    function setNotice(msg) {
+        sharing.classList.add('active');
+        roomLinkHref.text = msg;
+        roomLinkHref.href = msg;
     }
 
     // 响应
-    AppController.prototype.doAnswer = function () {
-        this.setNotice("连接中...");
-        this.pc.createAnswer(this.createOfferAndAnswerSuccess.bind(this), this.createOfferAndAnswerFailure.bind(this));
+    function doAnswer() {
+        setNotice("连接中...");
+        pc.createAnswer(createOfferAndAnswerSuccess, createOfferAndAnswerFailure);
     }
 
 
-    AppController.prototype.createOfferAndAnswerFailure = function (sessionDescription) {
+    function createOfferAndAnswerFailure(sessionDescription) {
         util.log.info("createOfferAndAnswerFailure -> :", JSON.stringify(sessionDescription));
     }
 
-    AppController.prototype.createOfferAndAnswerSuccess = function (sessionDescription) {
+    function createOfferAndAnswerSuccess(sessionDescription) {
         util.log.info("createOfferAndAnswerSuccess -> :", JSON.stringify(sessionDescription));
-        this.pc.setLocalDescription(sessionDescription);
-        this.sendMessage(sessionDescription);
+        pc.setLocalDescription(sessionDescription);
+        sendMessage(sessionDescription);
     }
 
     // websocket打开
-    AppController.prototype.onChannelOpened = function () {
+    function onChannelOpened() {
         util.log.info("websocket has opened ... ");
-        this.channelReady = true;
+        channelReady = true;
     }
 
     // websocket收到消息
-    AppController.prototype.onChannelMessage = function (message) {
+    function onChannelMessage(message) {
         util.log.info("---websocket recevied message--- : " + message.data);
         var data = JSON.parse(message.data);
         if (data.action == 'create') {
-            this.roomId = data.roomId;
-            this.clientId = data.clientId;
-            this.initiator = data.initiator;
-           // this.params_.joinRoomUrl = data.joinRoomUrl;
+            roomId = data.roomId;
+            clientId = data.clientId;
+            initiator = data.initiator;
+            params_.joinRoomUrl = data.joinRoomUrl;
         }
         // if (initiator && data.message) {
         if (data.message) {
-            this.processSignalingMessage(data.message);// 建立视频连接
+            processSignalingMessage(data.message);// 建立视频连接
         }
     }
 
     // 处理消息
-    AppController.prototype.processSignalingMessage = function (message) {
+    function processSignalingMessage(message) {
         var msg = JSON.parse(message);
 
         if (msg.type === "offer") {
-            this.pc.setRemoteDescription(new RTCSessionDescription(msg));
-            this.doAnswer();
-        } else if (msg.type === "answer" && this.started) {
-            this.pc.setRemoteDescription(new RTCSessionDescription(msg));
-        } else if (msg.type === "candidate" && this.started) {
+            pc.setRemoteDescription(new RTCSessionDescription(msg));
+            doAnswer();
+        } else if (msg.type === "answer" && started) {
+            pc.setRemoteDescription(new RTCSessionDescription(msg));
+        } else if (msg.type === "candidate" && started) {
             var candidate = new RTCIceCandidate({
                 sdpMLineIndex: msg.label,
                 candidate: msg.candidate
             });
-            this.pc.addIceCandidate(candidate);
-        } else if (msg.type === "bye" && this.started) {
-            this.onRemoteClose();
+            pc.addIceCandidate(candidate);
+        } else if (msg.type === "bye" && started) {
+            onRemoteClose();
         }
     }
 
     // websocket异常
-    AppController.prototype.onChannelError = function (event) {
+    function onChannelError(event) {
         util.log.info("websocket异常 : ", event);
     }
 
     // websocket关闭
-    AppController.prototype.onChannelClosed = function () {
+    function onChannelClosed() {
         util.log.info("websocket closed ...");
 
         // 断开重连
-        if (this.socket.readyState == 3) {
-            this.socket = new WebSocket(this.params_.wssUrl);
+        if (socket.readyState == 3) {
+            socket = new WebSocket(params_.wssUrl);
             util.log.info("websocket reconnect  ...");
         }
     }
 
-    // 邀请聊天：对方进入聊天室响应函数
-    AppController.prototype.onIceCandidate = function (event) {
+    // 邀请聊天：这个不是很清楚，应该是对方进入聊天室响应函数
+    function onIceCandidate(event) {
         if (event.candidate) {
             util.log.info('start send canditate ...');
-            this.sendMessage({
+            sendMessage({
                 type: "candidate",
                 label: event.candidate.sdpMLineIndex,
                 id: event.candidate.sdpMid,
                 candidate: event.candidate.candidate
             });
         } else {
-            this.endTime = window.performance.now();
-            util.log.info("End of candidates , condidates take time ", (this.endTime - this.startTime).toFixed(0) + 'ms.');
+            endTime = window.performance.now();
+            util.log.info("End of candidates , condidates take time ", (endTime - startTime).toFixed(0) + 'ms.');
         }
     }
 
     // 开始连接
-    AppController.prototype.onSessionConnecting = function (message) {
+    function onSessionConnecting(message) {
         util.log.info("start peer connction ...", message);
     }
 
     // 连接打开
-    AppController.prototype.onSessionOpened = function (message) {
+    function onSessionOpened(message) {
         util.log.info("opened peer connction ...", message);
     }
 
     // 远程视频添加
-    AppController.prototype.onRemoteStreamAdded = function (event) {
+    function onRemoteStreamAdded(event) {
         util.log.info("remote stream add : ", event.stream);
 
-        this.remoteStream = event.stream;
-        this.remoteVideo.srcObject = event.stream;
-        this.remoteVideo.classList.add('active');
-        this.waitForRemoteVideo();
+        remoteStream = event.stream;
+        remoteVideo.srcObject = event.stream;
+        remoteVideo.classList.add('active');
+        waitForRemoteVideo();
     }
 
     // 远程视频移除
-    AppController.prototype.onRemoteStreamRemoved = function (event) {
+    function onRemoteStreamRemoved(event) {
         util.log.info("remote stream removed : ", event);
     }
 
     // 远程视频关闭
-    AppController.prototype.onRemoteClose = function () {
-        this.started = false;
-        this.initiator = false;
+    function onRemoteClose() {
+        started = false;
+        initiator = false;
 
-        this.miniVideo.srcObject = null;
-        this.miniVideo.classList.remove('active');
-        this.remoteVideo.srcObject = null;
-        this.remoteVideo.classList.remove('active');
+        miniVideo.srcObject = null;
+        miniVideo.classList.remove('active');
+        remoteVideo.srcObject = null;
+        remoteVideo.classList.remove('active');
 
-        this.setNotice("远程客户端已断开！");
+        setNotice("远程客户端已断开！");
 
-        this.pc.close();
+        pc.close();
     }
 
     // 等待远程视频
-    AppController.prototype.waitForRemoteVideo = function () {
+    function waitForRemoteVideo() {
         //可用下面2种方法判断
         //1
-        if (this.remoteVideo.readyState >= 2) { // 判断远程视频长度
-            util.log.info('Remote video started; currentTime:  ', this.remoteVideo.currentTime);
-            this.transitionToActive();
+        if (remoteVideo.readyState >= 2) { // 判断远程视频长度
+            util.log.info('Remote video started; currentTime:  ',remoteVideo.currentTime);
+            transitionToActive();
         } else {
-            this.remoteVideo.oncanplay = this.waitForRemoteVideo.bind(this);
+            remoteVideo.oncanplay = waitForRemoteVideo;
         }
         //2
-        // if (this.remoteVideo.currentTime > 0) { // 判断远程视频长度
-        //     util.log.info('Remote video started; currentTime: ',this.remoteVideo.currentTime);
-        //     this.transitionToActive();
+        // if (remoteVideo.currentTime > 0) { // 判断远程视频长度
+        //     util.log.info('Remote video started; currentTime: ',remoteVideo.currentTime);
+        //     transitionToActive();
         // } else {
-        //     setTimeout(this.waitForRemoteVideo, 100);
+        //     setTimeout(waitForRemoteVideo, 100);
         // }
     }
 
     // 接通远程视频
-    AppController.prototype.transitionToActive = function () {
-        this.miniVideo.srcObject = this.localVideo.srcObject;
-        this.miniVideo.classList.add('active');
-        this.localVideo.srcObject = null;
-        this.localVideo.classList.remove('active');
+    function transitionToActive() {
+        miniVideo.srcObject = localVideo.srcObject;
+        miniVideo.classList.add('active');
+        localVideo.srcObject = null;
+        localVideo.classList.remove('active');
 
-        this.setNotice("连接成功！当前房间号是： " + this.roomId);
+        setNotice("连接成功！当前房间号是： " + roomId);
     }
 
 
-    AppController.prototype.leaveRoom = function () {
-        this.socket.send(JSON.stringify({
+    function leaveRoom() {
+        socket.send(JSON.stringify({
             "action": "leave",
-            "roomId": this.roomId,
-            "clientId": this.clientId,
+            "roomId": roomId,
+            "clientId": clientId,
             "message": JSON.stringify({"type": "bye"})
         }));
         // pc.close();
-        this.socket.close();
+        socket.close();
+    }
+
+    // 关闭窗口退出
+    window.onbeforeunload = function () {
+        leaveRoom();
     }
 
     // 设置浏览器支持提示信息
-    AppController.prototype.errorNotice = function (msg) {
-        this.errorNoticeDiv.style.display = "block";
-        this.errorNoticeDiv.innerHTML = msg;
+    function errorNotice(msg) {
+        errorNotice.style.display = "block";
+        errorNotice.innerHTML = msg;
     }
 
 
     module.exports = {
         init: function () {
-            var app = new AppController();
             if (!WebSocket) {
-                app.errorNotice("你的浏览器不支持WebSocket！建议使用<a href=\"https://www.google.com/intl/zh-CN/chrome/browser/\" target=\"_blank\">google chrome浏览器！</a>");
-            } else if (!window.RTCPeerConnection) {
-                app.errorNotice("你的浏览器不支持RTCPeerConnection！建议使用<a href=\"https://www.google.com/intl/zh-CN/chrome/browser/\" target=\"_blank\">google chrome浏览器！</a>");
+                errorNotice("你的浏览器不支持WebSocket！建议使用<a href=\"https://www.google.com/intl/zh-CN/chrome/browser/\" target=\"_blank\">google chrome浏览器！</a>");
+            } else if (!PeerConnection) {
+                errorNotice("你的浏览器不支持RTCPeerConnection！建议使用<a href=\"https://www.google.com/intl/zh-CN/chrome/browser/\" target=\"_blank\">google chrome浏览器！</a>");
             } else {
-                app.initialize();
+                initialize();
             }
         }
     }

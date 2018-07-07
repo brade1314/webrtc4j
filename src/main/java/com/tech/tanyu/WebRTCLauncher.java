@@ -1,8 +1,6 @@
 package com.tech.tanyu;
 
 
-import java.util.Objects;
-
 import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,29 +19,25 @@ public class WebRTCLauncher extends io.vertx.core.Launcher {
 
 	@Override
 	public void beforeStartingVertx(VertxOptions options) {
-		logger.info(" >>> is clustered --> {} ",options.isClustered());
+		logger.info("-->单机部署");
 	}
 
 	@Override
 	public void beforeDeployingVerticle(DeploymentOptions deploymentOptions) {
-		try {
-			if (Objects.isNull(deploymentOptions.getConfig())) {
-				deploymentOptions.setConfig(new JsonObject());
-			}
-			deploymentOptions.getConfig().mergeIn(getConfiguration());
-		} catch (Exception e) {
-			logger.error(" >>> before deploying verticl error ... " , e);
+		if (deploymentOptions.getConfig() == null) {
+			deploymentOptions.setConfig(new JsonObject());
 		}
+		deploymentOptions.getConfig().mergeIn(getConfiguration());
 	}
 
 	private JsonObject getConfiguration() {
 		JsonObject conf = new JsonObject();
 		try {
 			String config = IOUtils.toString(this.getClass().getResource("/config/config.json"), "UTF-8");
-			logger.info(" >>> config content:  " + config);
+			logger.info("config内容:  " + config);
 			conf = new JsonObject(config);
 		} catch (Exception e) {
-			logger.error(" >>> config file decode error ... " , e);
+			logger.info("Config file decode error ... " , e);
 		}
 		return conf;
 	}
