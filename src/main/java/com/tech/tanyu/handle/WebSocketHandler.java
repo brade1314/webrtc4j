@@ -1,106 +1,97 @@
 package com.tech.tanyu.handle;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.tech.tanyu.base.BaseHandler;
+import com.tech.tanyu.dto.ResponseDTO;
 import com.tech.tanyu.dto.Room;
 
 import io.vertx.core.Handler;
 import io.vertx.core.http.ServerWebSocket;
-import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 
-public class WebSocketHandler extends BaseHandler implements Handler<ServerWebSocket>{
-	
+public class WebSocketHandler implements Handler<ServerWebSocket> {
+
 	private Logger logger = LoggerFactory.getLogger(WebSocketHandler.class);
-	
+
+	protected Map<String, Room> clientsMap = new ConcurrentHashMap<>();
+
+	protected JsonObject config;
+
 	private JsonObject requestJson;
-	
+
 	public WebSocketHandler(JsonObject config) {
 		super();
 		this.config = config;
 	}
 
-	private void createRoom(ServerWebSocket webSocket){
-		logger.info(" >>> create room request： {}",this.requestJson);
+	private void createRoom(ServerWebSocket webSocket) {
+		logger.info(" >>> create room request： {}", this.requestJson);
 		String roomId = this.requestJson.getString("roomId");
-		Room room = null;
-		List<String> clients = new ArrayList<>();
-		boolean isInitiator = false;
-		if (null != roomId && clientsMap.containsKey(roomId)) {
-			room = clientsMap.get(roomId);
-			clients = room.getClientIds();
+		String clientId = this.requestJson.getString("clientId");
+		if (clientsMap.containsKey(roomId)) {
+			//房间存在 
+			clientsMap.get(roomId).getSockets().putIfAbsent(clientId, webSocket);
+		} else {
+			clientsMap.put(roomId, new Room().setSocket(clientId,webSocket).setRoomId(roomId)); 
 		}
-		if (null != clients && clients.size() > 0) {
-			isInitiator = true;
-		}
-		String clientId = String.valueOf(new Random().nextInt(1000000000));
-		clients.add(clientId);
-		room = new Room(roomId, clientId, clients, isInitiator);
-		clientsMap.put(roomId, room); 
-		socketMap.put(clientId, webSocket);
-//		String joinRoomUrl = this.config.getJsonObject("webrtc.config").getString("roomServer") + "?r=" + roomId;
-//		this.requestJson = new JsonObject(Json.encodePrettily(room)).put("action", "create").put("joinRoomUrl", joinRoomUrl); 
-		this.requestJson = new JsonObject(Json.encodePrettily(room)).put("action", "create"); 
+		this.requestJson = ResponseDTO.ok();
 		webSocket.writeTextMessage(this.requestJson.toString());
-		logger.info(" >>> create room response： {}",this.requestJson);
+		logger.info(" >>> create room response： {}", this.requestJson);
 	}
-	
-	private void messageHandler(ServerWebSocket webSocket){
-		logger.info(" >>> message room request： {}",this.requestJson);
+
+	private void messageHandler(ServerWebSocket webSocket) {
+		logger.info(" >>> message room request： {}", this.requestJson);
 		String msg = this.requestJson.getString("message");
 		String roomId = this.requestJson.getString("roomId");
 		String clientId = this.requestJson.getString("clientId");
-		Room room  = clientsMap.get(roomId);
-		List<String> clients = room.getClientIds();
-		logger.info(" >>> has clients： {}",clients);
-		clients.forEach(c->{
-			if(!c.equals(clientId)){
-				String result = new JsonObject().put("initiator", room.isInitiator()).put("message", msg).toString();
-				ServerWebSocket socket = socketMap.get(c);
-				socket.writeTextMessage(result);
-				logger.info(" >>> message room response： {}",result);
+		Room room = clientsMap.get(roomId);
+		Map<String, ServerWebSocket> socketMap = room.getSockets();
+		logger.info(" >>> has clients： {}", socketMap.keySet());
+		this.requestJson = ResponseDTO.ok(msg); 
+		socketMap.forEach((c,s)->{
+			if (!c.equals(clientId)) {
+				s.writeTextMessage(this.requestJson.toString());
 			}
 		});
-		
+		logger.info(" >>> message room response： {}", this.requestJson);
+
 	}
-	
-	private void leaveRoom(ServerWebSocket webSocket){
-		logger.info(" >>> leave room request： {}",this.requestJson);
+
+	private void leaveRoom(ServerWebSocket webSocket) {
+		logger.info(" >>> leave room request： {}", this.requestJson);
 		String roomId = this.requestJson.getString("roomId");
 		String clientId = this.requestJson.getString("clientId");
-		List<String> clients = new ArrayList<>();
-		if(null == roomId || null == clientId){
-			webSocket.writeTextMessage(this.requestJson.toString());
-			return ;
-		}
-		if(!clientsMap.containsKey(roomId)){
-			webSocket.writeTextMessage(this.requestJson.toString());
+		if (null == roomId || null == clientId) {
+			webSocket.close();
 			return;
 		}
-		clients = clientsMap.get(roomId).getClientIds();
-		if (clients.size() == 1 && clients.contains(clientId)) {
+		if (!clientsMap.containsKey(roomId)) {
+			webSocket.close();
+//			webSocket.writeTextMessage(this.requestJson.toString());
+			return;
+		}
+		Map<String, ServerWebSocket> sockets = clientsMap.get(roomId).getSockets();
+		
+		boolean isInitiator = false; 
+		if (sockets.size() == 1 && sockets.containsKey(clientId)) {
 			clientsMap.remove(roomId);
 		} else {
-			clients.remove(clientId);
-			clientsMap.put(roomId, new Room(roomId,null, clients, false));
+			isInitiator = true;
+			clientsMap.get(roomId).getSockets().remove(clientId);
+			logger.info(" >>> current has clients： {}", clientsMap.get(roomId).getSockets().keySet());
 		}
-		if(null != clientId && socketMap.containsKey(clientId)){
-			socketMap.remove(clientId);
-		}
-		clients.forEach(c->{
-			ServerWebSocket socket = socketMap.get(c);
-			if(null == socket){
+		this.requestJson =  ResponseDTO.ok(this.requestJson.put("initiator", isInitiator).toString());  
+		sockets.forEach((c,s) -> {
+			if (null == s) {
 				return;
 			}
-			socket.writeTextMessage(this.requestJson.toString());
+			s.writeTextMessage(this.requestJson.toString());
 		});
-		logger.info(" >>> leave room response： {}",this.requestJson);
+		logger.info(" >>> leave room response： {}", this.requestJson);
 	}
 
 	@Override
@@ -124,5 +115,5 @@ public class WebSocketHandler extends BaseHandler implements Handler<ServerWebSo
 			}
 		});
 	}
-	
+
 }
