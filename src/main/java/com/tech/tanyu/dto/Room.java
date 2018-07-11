@@ -1,8 +1,14 @@
 package com.tech.tanyu.dto;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+
+import io.vertx.core.http.ServerWebSocket;
 
 public class Room {
 	String roomId;
@@ -12,8 +18,10 @@ public class Room {
 	@JsonIgnore
 	List<String> clientIds;
 	
-	@JsonIgnore
 	List<String> message;
+	
+	@JsonIgnore
+	Map<String, ServerWebSocket> sockets;
 	
 	boolean isInitiator;
 	
@@ -55,6 +63,16 @@ public class Room {
 		this.message = message;
 		return this;
 	}
+	
+	public Room addOnetMessage(String msg) {
+		if (Objects.isNull(message)) {
+			this.message = new ArrayList<>();
+			this.message.add(msg);
+		} else {
+			this.message.add(msg);
+		}
+		return this;
+	}
 
 	public List<String> getClientIds() {
 		return clientIds;
@@ -82,5 +100,24 @@ public class Room {
 		this.roomId = roomId;
 		return this;
 	}
+
+	public Map<String, ServerWebSocket> getSockets() {
+		return sockets;
+	}
+
+	public Room setSocket(String clientId, ServerWebSocket socket) {
+		if (Objects.isNull(this.sockets)) {
+			this.sockets = new HashMap<>();
+		}
+		this.sockets.put(clientId, socket);
+		return this;
+	}
+	
+	public Room setSockets(Map<String, ServerWebSocket> sockets) {
+		this.sockets = sockets;
+		return this;
+	}
+	
+	
 	
 }

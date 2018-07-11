@@ -127,7 +127,18 @@ define(function (require, exports, module) {
 
         matchRandomRoomPattern:function (input) {
             return input.match(/^\d{9}$/) !== null;
-        }
+        },
+        
+		mergeOfferOptions : function(cons1, cons2) {
+			if (!cons1 || !cons2) {
+				return cons1 || cons2;
+			}
+			var merged = cons1;
+			for ( var key in cons2) {
+				merged[key] = cons2[key];
+			}
+			return merged;
+		}
 
     }
 
