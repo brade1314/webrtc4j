@@ -96,7 +96,7 @@ public abstract class PackageScanner {
             entry = innerFiles.nextElement();
             if (entry.getName().endsWith(CLASS_SUFFIX)) {
                 String entryName = entry.getName();
-                if (StringUtil.isNullOrEmpty(entryName) && entryName.startsWith(packageNameSb.toString()) && !entryName.contains("$")) {
+                if (!StringUtil.isNullOrEmpty(entryName) && entryName.startsWith(packageNameSb.toString()) && !entryName.contains("$")) {
 					logger.info(" >>> find class {}", entryName);
                     String clazzName = entryName.replaceAll("/", ".").replaceAll(".class", "");
                     Class<?> clazz = Class.forName(clazzName);
