@@ -2,6 +2,7 @@ define(function (require, exports, module) {
 
     var $ = require('jquery');
     var adapter = require('adapter');
+    var sdputils = require('sdputils');
     var util = require('util');
 
     var AppController = function () {
@@ -102,9 +103,9 @@ define(function (require, exports, module) {
 
     // 创建/加入房间
     AppController.prototype.connectToRoom_ = function () {
+        this.requestMediaAndIceServers_();
         this.roomId = this.roomIdInput.value;
         this.roomSelection.classList.add('hidden');
-        this.requestMediaAndIceServers_();
         var _this = this;
         var channelPromise = this.openChannel().catch(function(error) {
             util.log.error('webSocket open error: ', error.message);
@@ -115,15 +116,15 @@ define(function (require, exports, module) {
             return Promise.reject(error);
         });
         Promise.all([channelPromise, joinPromise]).then(function() {
-            _this.socket.send(JSON.stringify({"action": "create", "roomId": _this.roomId,"clientId":_this.clientId}));
+            _this.socket.send(JSON.stringify({"action": "create", "roomId": _this.roomId, "clientId": _this.clientId}));
             Promise.all([this.getIceServersPromise_, this.getMediaPromise_]).then(function() {
                 _this.startSignaling_();
-            }).catch(function(error) {
+            }.bind(this)).catch(function(error) {
                 util.log.error('start signaling error : ',error.message);
-            });
-        }).catch(function (error) {
+            }.bind(this));
+        }.bind(this)).catch(function (error) {
             util.log.error('channel or join room error: ', error.message);
-        });
+        }.bind(this));
 
     }
 
@@ -249,7 +250,7 @@ define(function (require, exports, module) {
     }
 
     AppController.prototype.getIceServer = function () {
-    	var _this = this;
+        var _this = this;
         return util.ajax('POST', _this.params_.iceServerUrl, true).then(function (result) {
             var response = JSON.parse(result);
             util.log.info('ICE server request success :', response);
@@ -265,8 +266,18 @@ define(function (require, exports, module) {
         this.pc.onicecandidate = this.onIceCandidate.bind(this);
         this.pc.onaddstream = this.onRemoteStreamAdded.bind(this);
         this.pc.onremovestream = this.onRemoteStreamRemoved.bind(this);
+        this.pc.ondatachannel = null;
 
     }
+
+    AppController.prototype.getPeerConnectionStats = function () {
+        if (!this.pc) {
+            return;
+        }
+        this.pc.getStats(null).then(function (response) {
+            util.log.info("peerconnection state is :", response);
+        });
+    };
 
     // 打开连接
     AppController.prototype.createPeerConnection = function () {
@@ -339,11 +350,21 @@ define(function (require, exports, module) {
         this.messageQueue_ = [];
     }
 
+
+
     AppController.prototype.processSignalingMessage_ = function(message) {
         if (message.type === 'offer'){
+            if (this.pc.signalingState !== 'stable') {
+                util.log.info('ERROR: remote offer received in unexpected state: ' ,this.pc.signalingState);
+                return;
+            }
         	this.setRemoteSdp_(message);
             this.pc.createAnswer().then(this.setLocalSdpAndNotify_.bind(this)).catch(this.createOfferAndAnswerFailure.bind(this));
         } else if(message.type === 'answer'){
+            if (this.pc.signalingState !== 'have-local-offer') {
+                util.log.info('ERROR: remote answer received in unexpected state: ' ,this.pc.signalingState);
+                return;
+            }
             this.setRemoteSdp_(message);
         } else if(message.type === 'candidate') {
             var candidate = new RTCIceCandidate({
@@ -357,6 +378,15 @@ define(function (require, exports, module) {
     }
     
     AppController.prototype.setRemoteSdp_ = function(message) {
+
+        message.sdp = maybeSetOpusOptions(message.sdp, this.params_.mediaCodec);
+        message.sdp = maybePreferAudioSendCodec(message.sdp, this.params_.mediaCodec);
+        message.sdp = maybePreferVideoSendCodec(message.sdp, this.params_.mediaCodec);
+        message.sdp = maybeSetAudioSendBitRate(message.sdp, this.params_.mediaCodec);
+        message.sdp = maybeSetVideoSendBitRate(message.sdp, this.params_.mediaCodec);
+        message.sdp = maybeSetVideoSendInitialBitRate(message.sdp, this.params_.mediaCodec);
+        message.sdp = maybeRemoveVideoFec(message.sdp, this.params_.mediaCodec);
+
     	this.pc.setRemoteDescription(new RTCSessionDescription(message))
         .then(this.onSetRemoteDescriptionSuccess_.bind(this))
         .catch(function(error){
@@ -366,6 +396,7 @@ define(function (require, exports, module) {
     
     AppController.prototype.onSetRemoteDescriptionSuccess_ = function() {
     	  util.log.info('set remote session description success.');
+    	  this.getPeerConnectionStats();
     	  var remoteStreams = this.pc.getRemoteStreams();
     	  this.onRemoteSdpSet_(remoteStreams.length > 0 && remoteStreams[0].getVideoTracks().length > 0);
     };
@@ -389,10 +420,15 @@ define(function (require, exports, module) {
     };
 
     AppController.prototype.setLocalSdpAndNotify_ = function (sessionDescription) {
+        // set sdp params
+        sessionDescription.sdp = maybePreferAudioReceiveCodec(sessionDescription.sdp,this.params_.mediaCodec);
+        sessionDescription.sdp = maybePreferVideoReceiveCodec(sessionDescription.sdp,this.params_.mediaCodec);
+        sessionDescription.sdp = maybeSetAudioReceiveBitRate(sessionDescription.sdp,this.params_.mediaCodec);
+        sessionDescription.sdp = maybeSetVideoReceiveBitRate(sessionDescription.sdp,this.params_.mediaCodec);
+        sessionDescription.sdp = maybeRemoveVideoFec(sessionDescription.sdp,this.params_.mediaCodec);
+
         util.log.info("create offer or answer success :", sessionDescription);
-        this.pc.setLocalDescription(sessionDescription).then(function(){
-        	util.log.info('set session description success.')
-        }).catch(function(){
+        this.pc.setLocalDescription(sessionDescription).catch(function(){
         	util.log.error('set session description error.')
         });
         this.sendSignalingMessage_(sessionDescription);
@@ -419,7 +455,6 @@ define(function (require, exports, module) {
     // websocket收到消息
     AppController.prototype.onChannelMessage = function (message) {
         var data = JSON.parse(message.data);
-        // util.log.info(" websocket recevied message : ", message);
         if (data.status == 'SUCCESS' && data.msg) {
             this.receiveSignalingMessage(data.msg);
         }
@@ -495,16 +530,17 @@ define(function (require, exports, module) {
         }
         // 2
         // if (this.remoteVideo.currentTime > 0) { // 判断远程视频长度
-        // util.log.info('Remote video started; currentTime:
-		// ',this.remoteVideo.currentTime);
-        // this.transitionToActive();
+        //     util.log.info('Remote video started; currentTime:',this.remoteVideo.currentTime);
+        //     this.transitionToActive();
         // } else {
-        // setTimeout(this.waitForRemoteVideo, 100);
+        //     setTimeout(this.waitForRemoteVideo, 100);
         // }
     }
 
     // 接通远程视频
     AppController.prototype.transitionToActive = function () {
+        this.remoteVideo.oncanplay = undefined;
+        this.remoteVideo.classList.add('active');
         this.miniVideo.srcObject = this.localVideo.srcObject;
         this.miniVideo.classList.add('active');
         this.localVideo.srcObject = null;

@@ -66,8 +66,7 @@ public class DispatcherHandler {
 				if (Objects.isNull(methodAnnotation)) {
 					continue;
 				}
-				String methodPath = StringUtil.isNullOrEmpty(methodAnnotation.value()) ? methodAnnotation.path()
-						: methodAnnotation.value();
+				String methodPath = StringUtil.isNullOrEmpty(methodAnnotation.value()) ? methodAnnotation.path() : methodAnnotation.value();
 				String requestPath = classPath + methodPath;
 
 				Route route = router.route(requestPath);

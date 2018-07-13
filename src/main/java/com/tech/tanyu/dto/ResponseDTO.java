@@ -1,9 +1,12 @@
 package com.tech.tanyu.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+
 import io.netty.handler.codec.http.HttpStatusClass;
 import io.vertx.core.json.Json;
 import io.vertx.core.json.JsonObject;
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class ResponseDTO {
 
 	private HttpStatusClass status;

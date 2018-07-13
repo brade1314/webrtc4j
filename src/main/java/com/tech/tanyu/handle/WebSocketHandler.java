@@ -34,7 +34,7 @@ public class WebSocketHandler implements Handler<ServerWebSocket> {
 		String clientId = this.requestJson.getString("clientId");
 		if (clientsMap.containsKey(roomId)) {
 			//房间存在 
-			clientsMap.get(roomId).getSockets().putIfAbsent(clientId, webSocket);
+			clientsMap.get(roomId).getSockets().put(clientId, webSocket);
 		} else {
 			clientsMap.put(roomId, new Room().setSocket(clientId,webSocket).setRoomId(roomId)); 
 		}

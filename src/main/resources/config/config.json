@@ -1,16 +1,22 @@
 {
   "http.port": 8080,
+  "scan.package":"com.tech.tanyu.handle",
   "webrtc.config": {
-    "wssUrl": "wss://www.youyeetech.com",
+ "wssUrl": "wss://www.youyeetech.com",
     "initiator": false,
     "roomId": null,
     "roomServer": "https://www.youyeetech.com",
     "joinRoomUrl": null,
     "iceServerUrl": "https://www.youyeetech.com/ice/turn?username=brade1314",
     "constraints": {
-      "video": { "mandatory": {}, "optional": [ { "minWidth": "1280" }, { "minHeight": "1080" } ] },
+      "video": {"mandatory": {"minWidth": "1280", "minHeight": "1080"}, "optional": [{"minWidth": "1280"}, {"minHeight": "1080"}]},
       "audio": true
     },
+    "offerOptions":{
+			"offerToReceiveAudio": 1,
+			"offerToReceiveVideo": 1,
+			"voiceActivityDetection": true
+	},
     "certParams": { "name": "ECDSA", "namedCurve": "P-256" },
     "peerConnectionConfig": {
       "iceServers": [],
